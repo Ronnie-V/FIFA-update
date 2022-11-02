@@ -4,12 +4,13 @@ import re
 import sys
 from unidecode import unidecode
 
-if len(sys.argv) > 1:
-  datum = sys.argv[1]
+if len(sys.argv) > 2 and len(sys.argv[1]) == 1 and len(sys.argv[2]) == 8:
+  sexe = sys.argv[1]
+  datum = sys.argv[2]
 else:
-  exit(f'Gebruik: {sys.argv[0]} 20210403')
+  exit(f'Gebruik: {sys.argv[0]} M 20220210')
 
-Targetdatabase = f'D://Wikipedia//Fifa-ranking.db'         
+Targetdatabase = 'D://Wikipedia//Fifa-ranking.db'         
     
 def open_db(name):
     print ('Connecting to',name)
@@ -37,6 +38,14 @@ def get_monthname(month):
     return switcher.get(month.strip(),"") 
 
 conn_uitvoer = open_db(Targetdatabase)
+
+def OpmaakScore(score):
+  score = str(score).replace(".", ",")  
+  x=0
+  while x < 10 and score[-3:-2] != ',':
+    score = score + '0'
+    x += 1
+  return (score)
 
 def LeesPositions(name):
   cpe = conn_uitvoer.cursor()
@@ -66,7 +75,7 @@ def LeesPositions(name):
     if LineNr == 5:
       NLLand = ''
       try:
-        SQL = f'SELECT `Nederlands` FROM `Landen` WHERE `Engels` = "{Name}"'
+        SQL = f'SELECT `Nederlands`, `Code` FROM `Landen` WHERE `Engels` = "{Name}"'
         cpe.execute( SQL )
         while True:
           row = cpe.fetchone()
@@ -74,7 +83,8 @@ def LeesPositions(name):
             break
           else:
             NLLand = row['Nederlands']
-        cpe.execute(f'INSERT INTO `Posities` VALUES ({Pos}, "{Name}", {CurPoints}, {OldPoints}, 0, "{NLLand}")')
+            Code = row['Code']
+        cpe.execute(f'INSERT INTO `Posities` VALUES ({Pos}, "{Name}", {CurPoints}, {OldPoints}, 0, "{NLLand}", "{Code}")')
       except:
         print('Fout')
       LineNr = 0
@@ -131,15 +141,22 @@ def LeesInitialPositions(name):
         pass    
   conn_uitvoer.commit()
   
-def MaakFile(datum):
+def MaakFile(datum, sexe):
   jaar = datum[:4]
   maand = datum[4:6]
   dag = datum[6:8].lstrip('0')
   maand = get_monthname(maand)
   f = open(f'D://Wikipedia//FIFA-array_{datum}.txt', "w")
+  if sexe == 'M':
+    f2 = open(f'D://Wikipedia//FIFA-topmen_{datum}.txt', "w")
+  else:
+    f2 = open(f'D://Wikipedia//FIFA-topwomen_{datum}.txt', "w")
   f.write(f"| datum = {dag} {maand} {jaar}\n")
+  f2.write(f"== Top 20 van de ranglijst per {dag} {maand} {jaar} ==\n")
+  f2.write( '{| class="wikitable"\n' )
+  f2.write( '!width=45|{{Afkorting|Pos|Positie}} ||width=30|+/- ||width=250|Land ||width=50|Punten\n' )
   cpe = conn_uitvoer.cursor()
-  SQL = f'SELECT `HuidigePositie`, `VorigePositie`, `NederlandseLandsnaam` FROM `Posities` ORDER BY `HuidigePositie`'
+  SQL = f'SELECT `HuidigePositie`, `VorigePositie`, `NederlandseLandsnaam`, `HuidigeScore`, `Code` FROM `Posities` ORDER BY `HuidigePositie`'
   cpe.execute( SQL )
   while True:
     row = cpe.fetchone()
@@ -147,6 +164,7 @@ def MaakFile(datum):
       break
     HuidPos = row['HuidigePositie']
     VoriPos = row['VorigePositie']
+    HuidSco = OpmaakScore(row['HuidigeScore']) 
     Naam = row['NederlandseLandsnaam'].strip()
     f.write(f"| {Naam} = {HuidPos} ")
     if HuidPos < VoriPos:
@@ -159,9 +177,38 @@ def MaakFile(datum):
       f.write( "\n")
     else:
       f.write( "{{stabiel}}\n")
+    if HuidPos <= 20:
+      if row['Code'] == '':
+        Code = Naam
+      else:
+        Code = '{{'+row['Code']+'f'
+        if sexe != 'M':
+          Code = Code + 'v'
+        Code = Code + '}}'
+      f2.write( "|-\n")
+      f2.write(f"| '''{HuidPos}''' || ")
+      if HuidPos < VoriPos:
+        f2.write( "{{winst}} <sup>")
+        f2.write(f"{VoriPos-HuidPos}")
+        f2.write( "</sup>")
+      elif HuidPos > VoriPos:
+        f2.write( "{{verlies}} <sub>")
+        f2.write(f"{HuidPos-VoriPos}")
+        f2.write( "</sub>")
+      else:
+        f2.write( "{{stabiel}}")
+      f2.write(f" || {Code} || {HuidSco}\n")
+
+  f2.write( '|-\n')
+  if sexe == 'M':
+    f2.write( '| colspan=4 align="center" | <small>[https://www.fifa.com/fifa-world-ranking/men Complete ranglijst op fifa.com]</small>\n')
+  else:
+    f2.write(f'| colspan=4 align="center" | <small>[https://www.fifa.com/fifa-world-ranking/women?dateId=ranking_{datum} Complete ranglijst op fifa.com]</small>\n')
+  f2.write( '|}\n')
+  f2.close()
   f.close()
 
 LeesPositions(f'D://Wikipedia//FIFA-EN{datum}.txt')
 # LeesInitialPositions('D://Wikipedia//FIFA-NL20210407.txt')
 GeefPositions()
-MaakFile(datum) 
+MaakFile(datum, sexe) 
